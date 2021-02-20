@@ -1,60 +1,66 @@
-val bkslsh = #"\\";
+val quote = #"\"";
 val lf = #"\n";
 
-(* implements file check *)
-
-exception UnescapedBackslash
+exception ImproperDoubleQuotes
+exception NoNewlineAtEOF
+exception UnevenFields
+exception emptyInputFile
 fun convertDelimiters(infilename, delim1, outfilename, delim2) =
 	let
 		val infile = TextIO.openIn(infilename)
+		handle e => raise emptyInputFile
 		val outfile = TextIO.openOut(outfilename)
-
-		(* implements extracting line and returns as string *)
-		fun nextLine(ret, instream, enc) =
-			case TextIO.input1(instream) of
-				SOME c =>
-					if enc = false andalso c = lf then ret
-					else nextLine(ret ^ str(c), instream, c = bkslsh)
-			|	NONE => if enc then raise UnescapedBackslash else ret
 
 		(* implements writing to output *)
 		fun flush(s) = TextIO.output(outfile, s)
+
+		(* process the first line and return the number of delimiters *)
+		fun process(state, count: int, ret) =
+			case TextIO.input1(infile) of
+				SOME c	=>
+					if c = lf then
+						if state = 1 then	process(1, count, ret ^ str(c))
+						else				(flush(ret ^ (if state = 3 then str(quote) else "") ^ str(c)); count)
+					else (
+					if state = 0 orelse state = 2 then
+						if c = quote then
+							process(1, count, ret ^ str(c))
+						else if c = delim1 then
+							process(0, count + 1, ret ^ str(delim2))
+						else
+							if state = 2 then raise ImproperDoubleQuotes else process(3, count, ret ^ str(quote) ^ str(c))
+					else if state = 1 then
+						process(if c = quote then 2 else 1, count, ret ^ str(c))
+					else
+						if c = quote then raise ImproperDoubleQuotes
+						else if c = delim1 then
+							process(0, count + 1, ret ^ str(quote) ^ str(delim2))
+						else process(3, count, ret ^ str(c)))
+			|	NONE	=> raise NoNewlineAtEOF
 		
-		(* implements conversion of line
-		   enc 		= if odd number of \ were encountered
-		   buffer 	= the current buffer value to be written *)
-		fun process(enc, nil) 		= if enc then raise UnescapedBackslash else flush(str(lf))
-		|	process(enc, c :: line)	=
-			if enc = false then
-				if c = bkslsh then process(true, line)
-				else (
-					if c = delim1 		then flush(str(delim2))
-					else if c = delim2	then flush("\\" ^ str(delim2))
-					else 					 flush(str(c))
-				) before process(false, line)
-			else
-				if c = bkslsh 		then flush(str(c) ^ str(c)) before process(false, line)
-				else if c = delim1	then flush(str(c)) before process(false, line)
-				else if c = lf		then flush(str(bkslsh) ^ str(c)) before process(false, line)
-				else raise UnescapedBackslash
-		
-		fun throwException() =
+		fun throwException(e) =
 			let
 				val outfile = TextIO.openOut(outfilename)
 			in
-				TextIO.output(outfile, ""); raise UnescapedBackslash
+				TextIO.output(outfile, ""); raise e
 		end
+
+		val count = process(0, 0, "")
 
 		(* implement line iteration *)
-		fun iterate(instream) =
-			let
-				val line = nextLine("", instream, false)
-			in
-				process(false, explode(line)) before (if TextIO.lookahead(instream) = NONE then flush("") else iterate(instream))
-		end
-		handle UnescapedBackslash => TextIO.closeOut(outfile) before TextIO.closeIn(infile) before throwException()
+		fun iterate(lineNum) =
+			if TextIO.lookahead(infile) = NONE then TextIO.closeOut(outfile) before TextIO.closeIn(infile) else (
+				let
+					val curr = process(0, 0, "")
+				in
+					if curr = count then iterate(lineNum + 1)
+					else (print("Expected: " ^ Int.toString(count) ^ " fields, Present: " ^ Int.toString(curr) ^ " fields on Line " ^ Int.toString(lineNum)); raise UnevenFields)
+				end)
+		handle e => TextIO.closeOut(outfile) before TextIO.closeIn(infile) before throwException(e)
 	in
 		(* actual execution of the function which calls the iteration and closes the files *)
-		iterate(infile) before TextIO.closeOut(outfile) before TextIO.closeIn(infile)
+		iterate(2)
 end
 
+fun csv2tsv(infilename, outfilename) = convertDelimiters(infilename, #",", outfilename, #"\t")
+fun tsv2csv(infilename, outfilename) = convertDelimiters(infilename, #"\t", outfilename, #",")
