@@ -15,27 +15,27 @@ fun convertDelimiters(infilename, delim1, outfilename, delim2) =
 		fun flush(s) = TextIO.output(outfile, s)
 
 		(* process the first line and return the number of delimiters *)
-		fun process(state, count: int, ret) =
+		fun process(state, count) =
 			case TextIO.input1(infile) of
 				SOME c	=>
 					if c = lf then
-						if state = 1 then	process(1, count, ret ^ str(c))
-						else				(flush(ret ^ (if state = 3 then str(quote) else "") ^ str(c)); count)
+						if state = 1 then	(flush(str(c)); process(1, count))
+						else				(flush((if state = 3 then str(quote) else "") ^ str(c)); count)
 					else (
 					if state = 0 orelse state = 2 then
 						if c = quote then
-							process(1, count, ret ^ str(c))
+							(flush(str(c)); process(1, count))
 						else if c = delim1 then
-							process(0, count + 1, ret ^ str(delim2))
+							(flush(str(delim2)); process(0, count + 1))
 						else
-							if state = 2 then raise ImproperDoubleQuotes else process(3, count, ret ^ str(quote) ^ str(c))
+							if state = 2 then raise ImproperDoubleQuotes else (flush(str(quote) ^ str(c)); process(3, count))
 					else if state = 1 then
-						process(if c = quote then 2 else 1, count, ret ^ str(c))
+						(flush(str(c)); process(if c = quote then 2 else 1, count))
 					else
 						if c = quote then raise ImproperDoubleQuotes
 						else if c = delim1 then
-							process(0, count + 1, ret ^ str(quote) ^ str(delim2))
-						else process(3, count, ret ^ str(c)))
+							(flush(str(quote) ^ str(delim2)); process(0, count + 1))
+						else (flush(str(c)); process(3, count)))
 			|	NONE	=> raise NoNewlineAtEOF
 		
 		fun throwException(e) =
@@ -45,13 +45,13 @@ fun convertDelimiters(infilename, delim1, outfilename, delim2) =
 				TextIO.output(outfile, ""); raise e
 		end
 
-		val count = process(0, 0, "")
+		val count = process(0, 0)
 
 		(* implement line iteration *)
 		fun iterate(lineNum) =
 			if TextIO.lookahead(infile) = NONE then TextIO.closeOut(outfile) before TextIO.closeIn(infile) else (
 				let
-					val curr = process(0, 0, "")
+					val curr = process(0, 0)
 				in
 					if curr = count then iterate(lineNum + 1)
 					else (print("Expected: " ^ Int.toString(count) ^ " fields, Present: " ^ Int.toString(curr) ^ " fields on Line " ^ Int.toString(lineNum)); raise UnevenFields)
