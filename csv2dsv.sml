@@ -3,7 +3,7 @@ val lf = #"\n";
 
 exception ImproperDoubleQuotes
 exception NoNewlineAtEOF
-exception UnevenFields
+exception UnevenFields of string
 exception emptyInputFile
 fun convertDelimiters(infilename, delim1, outfilename, delim2) =
 	let
@@ -37,13 +37,6 @@ fun convertDelimiters(infilename, delim1, outfilename, delim2) =
 							(flush(str(quote) ^ str(delim2)); process(0, count + 1))
 						else (flush(str(c)); process(3, count)))
 			|	NONE	=> raise NoNewlineAtEOF
-		
-		fun throwException(e) =
-			let
-				val outfile = TextIO.openOut(outfilename)
-			in
-				TextIO.output(outfile, ""); raise e
-		end
 
 		val count = process(0, 0)
 
@@ -54,9 +47,14 @@ fun convertDelimiters(infilename, delim1, outfilename, delim2) =
 					val curr = process(0, 0)
 				in
 					if curr = count then iterate(lineNum + 1)
-					else (print("Expected: " ^ Int.toString(count) ^ " fields, Present: " ^ Int.toString(curr) ^ " fields on Line " ^ Int.toString(lineNum)); raise UnevenFields)
+					else raise UnevenFields("Expected: " ^ Int.toString(count) ^ " fields, Present: " ^ Int.toString(curr) ^ " fields on Line " ^ Int.toString(lineNum) ^ str(lf))
 				end)
-		handle e => TextIO.closeOut(outfile) before TextIO.closeIn(infile) before throwException(e)
+		handle UnevenFields(s) => (TextIO.closeOut(outfile) before TextIO.closeIn(infile);
+			let
+				val outfile = TextIO.openOut(outfilename)
+			in
+				TextIO.output(outfile, ""); print(s)
+			end)
 	in
 		(* actual execution of the function which calls the iteration and closes the files *)
 		iterate(2)
