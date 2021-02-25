@@ -37,7 +37,7 @@ fun convertDelimiters(infilename, delim1, outfilename, delim2) =
 							else if c = delim1 then
 								(TextIO.output(outfile, str(quote) ^ str(delim2)); process(0, count + 1))
 							else (TextIO.output(outfile, str(c)); process(3, count)))
-			|	NONE	=> raise NoNewlineAtEOF
+			|	NONE	=> if state = 1 then raise ImproperDoubleQuotes else raise NoNewlineAtEOF
 
 		(* process first line and store number of fields *)
 		val count = process(0, 1)
